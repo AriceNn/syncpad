@@ -12,9 +12,15 @@
   "host_permissions": [
     "https://onfdobqijhaqzrjwqobw.supabase.co/*"
   ],
+  "icons": {
+    "128": "icon128.png"
+  },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "SyncPad"
+    "default_title": "SyncPad",
+    "default_icon": {
+      "128": "icon128.png"
+    }
   },
   "background": {
     "service_worker": "background.js"
