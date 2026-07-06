@@ -62,7 +62,13 @@ const btnCloseSettings = document.getElementById('btn-close-settings');
 document.addEventListener('DOMContentLoaded', async () => {
     loadingOverlay.classList.remove('hidden');
 
-    const data = await chrome.storage.local.get(['seedPhrase', 'storageVersion']);
+    const data = await chrome.storage.local.get(['seedPhrase', 'storageVersion', 'lang']);
+    
+    // Initialize Language
+    const savedLang = data.lang || 'en';
+    const langSelect = document.getElementById('lang-select');
+    if (langSelect) langSelect.value = savedLang;
+    if (typeof applyLanguage === 'function') applyLanguage(savedLang);
     if (data.seedPhrase) {
         currentPhrase = data.seedPhrase;
 
@@ -174,8 +180,8 @@ function showMainView() {
     mainView.classList.remove('hidden');
 }
 
-function showSyncStatus(msg = "Synced") {
-    syncStatus.textContent = msg;
+function showSyncStatus(msgKey = "msg_synced") {
+    syncStatus.textContent = getTranslation(msgKey);
     syncStatus.classList.remove('hidden');
     syncStatus.classList.add('visible');
     setTimeout(() => {
@@ -213,7 +219,7 @@ btnSlaveBack.addEventListener('click', () => {
 btnSlaveDone.addEventListener('click', async () => {
     const phrase = seedInput.value.trim().replace(/\s+/g, ' ');
     if (phrase.split(' ').length !== 25) {
-        slaveError.textContent = "Invalid phrase length. Must be 25 words.";
+        slaveError.textContent = getTranslation('slave_error_length');
         slaveError.classList.remove('hidden');
         return;
     }
@@ -221,7 +227,7 @@ btnSlaveDone.addEventListener('click', async () => {
     const words = phrase.split(' ');
     const invalidWord = words.find(w => !WORDLIST.includes(w));
     if (invalidWord) {
-        slaveError.textContent = `Invalid word: ${invalidWord}`;
+        slaveError.textContent = getTranslation('slave_error_word') + invalidWord;
         slaveError.classList.remove('hidden');
         return;
     }
@@ -249,7 +255,7 @@ btnRefresh.addEventListener('click', async () => {
     const icon = btnRefresh.querySelector('svg');
     icon.style.animation = 'spin 1s linear infinite';
     await fetchFromSupabase();
-    showSyncStatus("Refreshed");
+    showSyncStatus("msg_refreshed");
     setTimeout(() => {
         icon.style.animation = '';
     }, 500);
@@ -264,10 +270,19 @@ btnCloseSettings.addEventListener('click', () => {
     settingsOverlay.classList.add('hidden');
 });
 
+const langSelect = document.getElementById('lang-select');
+if (langSelect) {
+    langSelect.addEventListener('change', async (e) => {
+        const lang = e.target.value;
+        if (typeof applyLanguage === 'function') applyLanguage(lang);
+        await chrome.storage.local.set({ lang: lang });
+    });
+}
+
 btnCopySeed.addEventListener('click', async () => {
     await navigator.clipboard.writeText(currentPhrase);
     const originalContent = btnCopySeed.innerHTML;
-    btnCopySeed.textContent = "Copied!";
+    btnCopySeed.textContent = getTranslation("msg_copied");
     setTimeout(() => { btnCopySeed.innerHTML = originalContent; }, 2000);
 });
 
@@ -413,7 +428,7 @@ btnNewNote.addEventListener('click', () => {
     noteEditor.classList.remove('hidden');
     notepadTextarea.value = '';
     charCount.textContent = '0 / 10000';
-    btnSaveNote.textContent = 'Save Note';
+    btnSaveNote.textContent = getTranslation('btn_save_note');
     notepadTextarea.focus();
     btnNewNote.classList.add('hidden');
 });
@@ -467,7 +482,7 @@ function openNoteEditor(index) {
     noteEditor.classList.remove('hidden');
     notepadTextarea.value = notepadData[index].text;
     charCount.textContent = `${notepadTextarea.value.length} / 10000`;
-    btnSaveNote.textContent = 'Update Note';
+    btnSaveNote.textContent = getTranslation('btn_update_note');
     notepadTextarea.focus();
     btnNewNote.classList.add('hidden');
 }
