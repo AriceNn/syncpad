@@ -114,12 +114,15 @@
                 
                 <div class="mb-6 flex items-center justify-between">
                     <label class="text-sm font-medium" data-i18n="settings_lang">Language</label>
-                    <select id="lang-select" class="input p-2 h-auto w-32" style="padding-top: 0.25rem; padding-bottom: 0.25rem;">
-                        <option value="en">English</option>
-                        <option value="tr">Türkçe</option>
-                        <option value="de">Deutsch</option>
-                        <option value="fr">Français</option>
-                    </select>
+                    <div class="select-wrapper">
+                        <select id="lang-select" class="input select-input">
+                            <option value="en">English</option>
+                            <option value="tr">Türkçe</option>
+                            <option value="de">Deutsch</option>
+                            <option value="fr">Français</option>
+                        </select>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="select-chevron"><path d="m6 9 6 6 6-6"/></svg>
+                    </div>
                 </div>
 
                 <div class="flex gap-2">
