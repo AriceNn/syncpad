@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="cyanGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f2fe" />
+      <stop offset="100%" stop-color="#4facfe" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="512" height="512" rx="120" fill="#020617" />
+
+  <!-- 300-degree Circular Arrow (Sync) -->
+  <!-- Starts at bottom-right (412, 346) -->
+  <!-- Goes clockwise covering 300 degrees to top-right (412, 166) -->
+  <path d="M 412 346 A 180 180 0 1 1 412 166" fill="none" stroke="url(#cyanGradient)" stroke-width="32" stroke-linecap="round" />
+  
+  <!-- Arrow Head at (412, 166) pointing down-right (tangent 60 deg) -->
+  <path d="M 372 146 L 412 166 L 422 116" fill="none" stroke="url(#cyanGradient)" stroke-width="32" stroke-linecap="round" stroke-linejoin="round" />
+  
+  <!-- Notepad Background (White interior) -->
+  <rect x="176" y="146" width="160" height="220" rx="16" fill="#ffffff" stroke="url(#cyanGradient)" stroke-width="16" />
+  
+  <!-- Notepad Binding (Rings) -->
+  <line x1="206" y1="126" x2="206" y2="166" stroke="url(#cyanGradient)" stroke-width="12" stroke-linecap="round" />
+  <line x1="256" y1="126" x2="256" y2="166" stroke="url(#cyanGradient)" stroke-width="12" stroke-linecap="round" />
+  <line x1="306" y1="126" x2="306" y2="166" stroke="url(#cyanGradient)" stroke-width="12" stroke-linecap="round" />
+  
+  <!-- Notepad Lines (Dark/Slate for contrast on white) -->
+  <line x1="206" y1="206" x2="306" y2="206" stroke="#94a3b8" stroke-width="12" stroke-linecap="round" />
+  <line x1="206" y1="246" x2="306" y2="246" stroke="#94a3b8" stroke-width="12" stroke-linecap="round" />
+  <line x1="206" y1="286" x2="306" y2="286" stroke="#94a3b8" stroke-width="12" stroke-linecap="round" />
+  <line x1="206" y1="326" x2="276" y2="326" stroke="#94a3b8" stroke-width="12" stroke-linecap="round" />
+</svg>
