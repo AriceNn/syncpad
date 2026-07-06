@@ -1,7 +1,7 @@
 // background.js
 
-// Import config (service worker runs from root, so path is relative to root)
-importScripts('scripts/config.js');
+// Import config (service worker runs from scripts folder, so path is relative to it)
+importScripts('config.js');
 
 chrome.runtime.onInstalled.addListener(() => {
     // 3 days = 3 * 24 * 60 = 4320 minutes
