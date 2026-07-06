@@ -48,6 +48,7 @@ const notepadList = document.getElementById('notepad-list');
 const syncStatus = document.getElementById('sync-status');
 
 // Settings / Logout UI
+const btnRefresh = document.getElementById('btn-refresh');
 const btnSettings = document.getElementById('btn-settings');
 const settingsOverlay = document.getElementById('settings-overlay');
 const settingsSeedDisplay = document.getElementById('settings-seed-display');
@@ -242,8 +243,18 @@ btnSlaveDone.addEventListener('click', async () => {
 });
 
 // =========================================================
-// SETTINGS / LOGOUT
+// SETTINGS / LOGOUT / REFRESH
 // =========================================================
+btnRefresh.addEventListener('click', async () => {
+    const icon = btnRefresh.querySelector('svg');
+    icon.style.animation = 'spin 1s linear infinite';
+    await fetchFromSupabase();
+    showSyncStatus("Refreshed");
+    setTimeout(() => {
+        icon.style.animation = '';
+    }, 500);
+});
+
 btnSettings.addEventListener('click', () => {
     settingsSeedDisplay.textContent = currentPhrase;
     settingsOverlay.classList.remove('hidden');
