@@ -1,67 +1,87 @@
-# SyncPad & Clipboard
+# SyncPad & Clipboard Sync Extension
 
-SyncPad is a secure, end-to-end encrypted Chrome extension that allows you to sync your clipboard history and notes across multiple devices.
+SyncPad is a highly secure, end-to-end encrypted Chrome extension that allows you to seamlessly sync your clipboard history and personal notes across multiple devices (Windows, Mac, Linux) via your own Supabase instance.
 
-## Features
+![SyncPad Icon](icon128.png)
 
-- **End-to-End Encryption:** Your data is encrypted locally using AES-GCM (256-bit) before it ever leaves your browser. 
-- **BIP39 Seed Phrase:** Securely link devices using a 25-word recovery phrase.
-- **Clipboard Sync:** Easily push your current clipboard to your synced devices.
-- **Notepad:** Create, edit, and delete notes that instantly sync across your group.
-- **Modern UI:** Designed with a sleek, dark-mode Shadcn UI aesthetic.
-- **Privacy First:** Data is stored in your own Supabase instance.
+## ✨ Key Features
 
-## Getting Started
+### 🛡️ Uncompromising Security
+*   **End-to-End Encryption (E2EE):** All your clipboard items and notes are encrypted locally in your browser using **AES-GCM (256-bit)** before they are sent to the server. The server (Supabase) only ever sees ciphertext.
+*   **PBKDF2 Key Derivation:** Your encryption key is securely derived from your 25-word recovery phrase using **PBKDF2** (100,000 iterations, SHA-256 salt).
+*   **Cryptographic Domain Separation:** The Document ID used to query the database and the AES key used to encrypt the data are derived using different salts, ensuring that knowing the database ID gives zero hints about the encryption key.
+*   **BIP39 Seed Phrase Authentication:** No usernames or passwords. Devices are linked using a generated 25-word seed phrase (similar to hardware crypto wallets) providing ~275 bits of entropy.
 
-### Prerequisites
+### 📝 Smart Syncing & UI
+*   **Shadcn UI Dark Mode:** The interface is built from scratch utilizing the modern, minimalist Shadcn UI design system (Zinc/Slate palette, Glassmorphism, highly responsive layout).
+*   **Clipboard Management:** Instantly push your current clipboard to all connected devices. Hover over any clipboard item to quickly **Copy** or **Delete** it.
+*   **Advanced Notepad:** Create persistent notes (up to 10,000 characters). Hover over notes to **Copy**, **Edit**, or **Delete** them.
+*   **Race-Condition Protection (Fetch-before-Push):** Ensures you never accidentally overwrite data from another device. The extension quietly fetches the absolute latest state from the server fractions of a second before pushing your new changes, guaranteeing perfect merges.
+*   **Automated 14-Day TTL:** To keep your sync payloads lean and fast, any clipboard or note item older than 14 days is automatically pruned locally before every push.
 
-1. A [Supabase](https://supabase.com) account to host the database.
-2. Google Chrome or any Chromium-based browser.
+---
 
-### Supabase Setup
+## 🚀 Getting Started
 
-1. Create a new Supabase project.
-2. In the SQL Editor, run the following to create the required table:
-   ```sql
-   CREATE TABLE sync_data (
-     id TEXT PRIMARY KEY,
-     clipboard TEXT,
-     notepad TEXT,
-     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-   );
-   ```
-3. To protect against unauthorized deletion (vandalism), enable Row Level Security (RLS) with these policies:
-   ```sql
-   ALTER TABLE sync_data ENABLE ROW LEVEL SECURITY;
+### 1. Supabase Setup (Your Server)
+You need a free [Supabase](https://supabase.com) account to act as the sync relay.
 
-   CREATE POLICY "Anon can select" ON sync_data FOR SELECT USING (true);
-   CREATE POLICY "Anon can insert" ON sync_data FOR INSERT WITH CHECK (true);
-   CREATE POLICY "Anon can update" ON sync_data FOR UPDATE USING (true) WITH CHECK (true);
-   -- Note: DELETE is intentionally omitted so rows cannot be deleted via the API.
-   ```
+1.  Create a new project.
+2.  Go to the **SQL Editor** and run the following script to create the table and secure it against vandalism:
 
-### Extension Setup
+```sql
+-- Create the sync table
+CREATE TABLE sync_data (
+  id TEXT PRIMARY KEY,
+  clipboard TEXT,
+  notepad TEXT,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
 
-1. Clone or download this repository.
-2. Open `config.js` and add your Supabase URL and Anon Key:
-   ```javascript
-   const SUPABASE_URL = "https://your-project.supabase.co";
-   const SUPABASE_ANON_KEY = "your-anon-key";
-   ```
-3. Open Chrome and navigate to `chrome://extensions/`.
-4. Enable **Developer mode** in the top right corner.
-5. Click **Load unpacked** and select the folder containing this extension.
+-- Enable Row Level Security (RLS)
+ALTER TABLE sync_data ENABLE ROW LEVEL SECURITY;
 
-## Usage
+-- Allow anyone with the anon key to read (data is encrypted anyway)
+CREATE POLICY "Anon can select" ON sync_data FOR SELECT USING (true);
+-- Allow inserting new sync groups
+CREATE POLICY "Anon can insert" ON sync_data FOR INSERT WITH CHECK (true);
+-- Allow updating existing sync groups
+CREATE POLICY "Anon can update" ON sync_data FOR UPDATE USING (true) WITH CHECK (true);
 
-- **Master Device:** On your first device, click **"Create New Account"**. This will generate a secure 25-word phrase. Keep this safe!
-- **Slave Device:** On your other devices, click **"Link Existing Device"** and enter the 25-word phrase from your master device.
+-- IMPORTANT: DELETE policy is omitted. 
+-- No one can delete an entire row via the API, preventing malicious data wipes.
+```
 
-Once linked, anything you "Push" from the Clipboard tab or save in the Notepad tab will be securely encrypted and synced across all your devices.
+### 2. Extension Configuration
+1.  Clone this repository to your local machine.
+2.  Open `config.js` (create it if it doesn't exist) and enter your Supabase URL and Anon Key:
+    ```javascript
+    const SUPABASE_URL = "https://your-project.supabase.co";
+    const SUPABASE_ANON_KEY = "your-anon-key";
+    ```
+3.  *(Note: `config.js` is included in `.gitignore` to prevent you from accidentally committing your keys to a public repo).*
 
-## Security
+### 3. Installation in Chrome
+1.  Open Chrome and navigate to `chrome://extensions/`.
+2.  Enable **Developer mode** (toggle in the top right).
+3.  Click **Load unpacked** and select the folder containing this extension.
 
-SyncPad uses robust cryptographic practices:
-- **PBKDF2 Key Derivation:** Your 25-word phrase is passed through PBKDF2 with 100,000 iterations to generate the AES-GCM encryption key.
-- **Domain Separation:** The document ID used to retrieve your data is hashed independently from your encryption key, ensuring that knowing the ID provides no advantage in decrypting the data.
-- **14-Day TTL:** Old clipboard entries and notes are automatically purged locally before syncing to keep your payload lean.
+---
+
+## 💻 Usage Instructions
+
+### Setting up the Master Device
+1.  Click the SyncPad icon in your Chrome toolbar.
+2.  Click **"Create New Account"**.
+3.  The extension will generate a secure 25-word phrase and automatically log you in. 
+4.  **Save this phrase!** You can view it anytime by clicking the **Settings (⚙️)** gear icon in the app.
+
+### Linking Slave Devices
+1.  On your second device (laptop, work computer, etc.), install the extension the same way.
+2.  Click **"Link Existing Device"**.
+3.  Paste the 25-word phrase from your Master Device.
+4.  You are now synced!
+
+### Under the Hood
+*   **Migrations:** If you were using v1 (which used raw SHA-256 for keys), the extension includes an automatic v1→v2 migration script. It will transparently decrypt your old data and re-encrypt it using the new PBKDF2 standards upon first load.
+*   **Background Ping:** A background service worker pings your Supabase instance every 3 days. This ensures your Supabase project does not get paused for inactivity on the free tier.
