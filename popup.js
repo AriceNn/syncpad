@@ -97,15 +97,10 @@ async function migrateToV2(phrase) {
     let legacyClipboard = [];
     let legacyNotepad = [];
 
-    if (SUPABASE_URL && !SUPABASE_URL.includes('YOUR_SUPABASE_URL')) {
+    if (typeof VERCEL_API_URL !== 'undefined' && !VERCEL_API_URL.includes('YOUR_VERCEL_APP_URL')) {
         try {
-            const url = `${SUPABASE_URL}/rest/v1/sync_data?id=eq.${legacyKeys.documentId}&select=*`;
-            const res = await fetch(url, {
-                headers: {
-                    'apikey': SUPABASE_ANON_KEY,
-                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-                }
-            });
+            const url = `${VERCEL_API_URL}?id=eq.${legacyKeys.documentId}&select=*`;
+            const res = await fetch(url);
 
             if (res.ok) {
                 const rows = await res.json();
