@@ -12,6 +12,7 @@ let DOC_ID = null;
 let clipboardData = [];
 let notepadData = [];
 let currentPhrase = "";
+let editingNoteIndex = -1; // -1 = new note, >= 0 = editing existing
 
 // DOM Elements
 const loadingOverlay = document.getElementById('loading-overlay');
@@ -338,14 +339,16 @@ btnCaptureClipboard.addEventListener('click', async () => {
 
 function renderClipboard() {
     const fragment = document.createDocumentFragment();
-    clipboardData.forEach(item => {
+    clipboardData.forEach((item, index) => {
         const div = document.createElement('div');
         div.className = 'list-item';
-        div.title = "Click to copy";
 
         const textDiv = document.createElement('div');
         textDiv.className = 'item-text';
         textDiv.textContent = item.text;
+
+        const footer = document.createElement('div');
+        footer.className = 'item-footer';
 
         const dateDiv = document.createElement('div');
         dateDiv.className = 'item-date';
@@ -353,14 +356,42 @@ function renderClipboard() {
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
         });
 
-        div.appendChild(textDiv);
-        div.appendChild(dateDiv);
+        const actions = document.createElement('div');
+        actions.className = 'item-actions';
 
-        div.addEventListener('click', async () => {
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'item-action-btn';
+        copyBtn.title = 'Copy';
+        copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+        copyBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
             await navigator.clipboard.writeText(item.text);
-            div.style.backgroundColor = 'var(--accent)';
-            setTimeout(() => { div.style.backgroundColor = ''; }, 300);
+            copyBtn.innerHTML = '✓';
+            setTimeout(() => {
+                copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+            }, 1000);
         });
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'item-action-btn destructive';
+        delBtn.title = 'Delete';
+        delBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>';
+        delBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            clipboardData.splice(index, 1);
+            renderClipboard();
+            await pushToSupabase();
+            showSyncStatus('Deleted');
+        });
+
+        actions.appendChild(copyBtn);
+        actions.appendChild(delBtn);
+
+        footer.appendChild(dateDiv);
+        footer.appendChild(actions);
+
+        div.appendChild(textDiv);
+        div.appendChild(footer);
 
         fragment.appendChild(div);
     });
@@ -372,14 +403,17 @@ function renderClipboard() {
 // NOTEPAD
 // =========================================================
 btnNewNote.addEventListener('click', () => {
+    editingNoteIndex = -1;
     noteEditor.classList.remove('hidden');
     notepadTextarea.value = '';
     charCount.textContent = '0 / 10000';
+    btnSaveNote.textContent = 'Save Note';
     notepadTextarea.focus();
     btnNewNote.classList.add('hidden');
 });
 
 btnCancelNote.addEventListener('click', () => {
+    editingNoteIndex = -1;
     noteEditor.classList.add('hidden');
     notepadTextarea.value = '';
     btnNewNote.classList.remove('hidden');
@@ -397,12 +431,20 @@ btnSaveNote.addEventListener('click', async () => {
         // Fetch latest from server first to prevent data loss
         await fetchFromSupabase();
 
-        notepadData.unshift({
-            text: text,
-            date: new Date().toISOString()
-        });
-        if (notepadData.length > 50) notepadData.length = 50;
+        if (editingNoteIndex >= 0 && editingNoteIndex < notepadData.length) {
+            // Update existing note
+            notepadData[editingNoteIndex].text = text;
+            notepadData[editingNoteIndex].date = new Date().toISOString();
+        } else {
+            // Create new note
+            notepadData.unshift({
+                text: text,
+                date: new Date().toISOString()
+            });
+            if (notepadData.length > 50) notepadData.length = 50;
+        }
 
+        editingNoteIndex = -1;
         noteEditor.classList.add('hidden');
         btnNewNote.classList.remove('hidden');
         renderNotepad();
@@ -414,16 +456,28 @@ btnSaveNote.addEventListener('click', async () => {
     }
 });
 
+function openNoteEditor(index) {
+    editingNoteIndex = index;
+    noteEditor.classList.remove('hidden');
+    notepadTextarea.value = notepadData[index].text;
+    charCount.textContent = `${notepadTextarea.value.length} / 10000`;
+    btnSaveNote.textContent = 'Update Note';
+    notepadTextarea.focus();
+    btnNewNote.classList.add('hidden');
+}
+
 function renderNotepad() {
     const fragment = document.createDocumentFragment();
-    notepadData.forEach(item => {
+    notepadData.forEach((item, index) => {
         const div = document.createElement('div');
         div.className = 'list-item';
-        div.title = "Click to copy";
 
         const textDiv = document.createElement('div');
         textDiv.className = 'item-text';
         textDiv.textContent = item.text;
+
+        const footer = document.createElement('div');
+        footer.className = 'item-footer';
 
         const dateDiv = document.createElement('div');
         dateDiv.className = 'item-date';
@@ -431,14 +485,52 @@ function renderNotepad() {
             month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
         });
 
-        div.appendChild(textDiv);
-        div.appendChild(dateDiv);
+        const actions = document.createElement('div');
+        actions.className = 'item-actions';
 
-        div.addEventListener('click', async () => {
+        const copyBtn = document.createElement('button');
+        copyBtn.className = 'item-action-btn';
+        copyBtn.title = 'Copy';
+        copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+        copyBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
             await navigator.clipboard.writeText(item.text);
-            div.style.backgroundColor = 'var(--accent)';
-            setTimeout(() => { div.style.backgroundColor = ''; }, 300);
+            copyBtn.innerHTML = '✓';
+            setTimeout(() => {
+                copyBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+            }, 1000);
         });
+
+        const editBtn = document.createElement('button');
+        editBtn.className = 'item-action-btn';
+        editBtn.title = 'Edit';
+        editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>';
+        editBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openNoteEditor(index);
+        });
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'item-action-btn destructive';
+        delBtn.title = 'Delete';
+        delBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>';
+        delBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            notepadData.splice(index, 1);
+            renderNotepad();
+            await pushToSupabase();
+            showSyncStatus('Deleted');
+        });
+
+        actions.appendChild(copyBtn);
+        actions.appendChild(editBtn);
+        actions.appendChild(delBtn);
+
+        footer.appendChild(dateDiv);
+        footer.appendChild(actions);
+
+        div.appendChild(textDiv);
+        div.appendChild(footer);
 
         fragment.appendChild(div);
     });
