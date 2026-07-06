@@ -498,6 +498,9 @@ async function fetchFromSupabase() {
 async function pushToSupabase() {
     if (!SUPABASE_URL || SUPABASE_URL.includes('YOUR_SUPABASE_URL')) return;
 
+    // Enforce 14-day TTL before pushing
+    purgeStaleItems();
+
     try {
         const notepadStr = JSON.stringify(notepadData);
         const clipboardStr = JSON.stringify(clipboardData);
@@ -531,4 +534,20 @@ async function pushToSupabase() {
     } catch (e) {
         console.error("Push error:", e);
     }
+}
+
+// =========================================================
+// TTL: Remove items older than 14 days
+// =========================================================
+function purgeStaleItems() {
+    const fourteenDaysMs = 14 * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - fourteenDaysMs;
+
+    const filterFn = item => {
+        const ts = new Date(item.date).getTime();
+        return !isNaN(ts) && ts > cutoff;
+    };
+
+    clipboardData = clipboardData.filter(filterFn);
+    notepadData = notepadData.filter(filterFn);
 }

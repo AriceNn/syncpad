@@ -9,6 +9,9 @@
     "clipboardRead",
     "clipboardWrite"
   ],
+  "host_permissions": [
+    "https://onfdobqijhaqzrjwqobw.supabase.co/*"
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "SyncPad"
