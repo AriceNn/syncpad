@@ -40,27 +40,56 @@ function base642ab(base64) {
     return bytes.buffer;
 }
 
-// Derive a key and an ID from the seed phrase
-async function deriveKeys(seedPhrase) {
+// -------------------------------------------------------
+// LEGACY key derivation — kept ONLY for data migration.
+// Uses raw SHA-256 hash as both document ID and AES key.
+// -------------------------------------------------------
+async function deriveKeysLegacy(seedPhrase) {
     const seedBuffer = str2ab(seedPhrase);
-    
-    // Hash for Document ID
+
+    // Legacy Document ID = SHA-256(seed)
     const hashBuffer = await self.crypto.subtle.digest('SHA-256', seedBuffer);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const documentId = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-    // Import key for AES-GCM
-    // In a real high-security app we'd use PBKDF2 here, but SHA-256 is sufficient 
-    // for a high-entropy 25-word phrase.
-    const keyMaterial = await self.crypto.subtle.importKey(
-        'raw', 
-        hashBuffer, 
-        { name: 'AES-GCM' }, 
-        false, 
+    // Legacy AES key = raw import of the same hash
+    const key = await self.crypto.subtle.importKey(
+        'raw', hashBuffer, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']
+    );
+
+    return { documentId, key };
+}
+
+// -------------------------------------------------------
+// NEW key derivation — PBKDF2 + domain separation.
+// Document ID and encryption key are derived from
+// completely independent inputs.
+// -------------------------------------------------------
+async function deriveKeys(seedPhrase) {
+    const seedBuffer = str2ab(seedPhrase);
+
+    // Domain-separated Document ID:
+    // SHA-256("syncpad-docid:" + seedPhrase)
+    const idInput = str2ab('syncpad-docid:' + seedPhrase);
+    const idHash = await self.crypto.subtle.digest('SHA-256', idInput);
+    const idArray = Array.from(new Uint8Array(idHash));
+    const documentId = idArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+    // PBKDF2 key derivation for AES-GCM
+    const baseKey = await self.crypto.subtle.importKey(
+        'raw', seedBuffer, 'PBKDF2', false, ['deriveKey']
+    );
+
+    const salt = str2ab('syncpad-v1-key-salt');
+    const key = await self.crypto.subtle.deriveKey(
+        { name: 'PBKDF2', salt, iterations: 100000, hash: 'SHA-256' },
+        baseKey,
+        { name: 'AES-GCM', length: 256 },
+        false,
         ['encrypt', 'decrypt']
     );
 
-    return { documentId, key: keyMaterial };
+    return { documentId, key };
 }
 
 // Encrypt data
@@ -70,10 +99,7 @@ async function encryptData(text, key) {
     const encoded = str2ab(text);
     
     const ciphertext = await self.crypto.subtle.encrypt(
-        {
-            name: "AES-GCM",
-            iv: iv
-        },
+        { name: "AES-GCM", iv: iv },
         key,
         encoded
     );
@@ -91,16 +117,11 @@ async function decryptData(base64String, key) {
     if (!base64String) return "";
     try {
         const combined = new Uint8Array(base642ab(base64String));
-        // Extract IV
         const iv = combined.slice(0, 12);
-        // Extract ciphertext
         const ciphertext = combined.slice(12);
 
         const decrypted = await self.crypto.subtle.decrypt(
-            {
-                name: "AES-GCM",
-                iv: iv
-            },
+            { name: "AES-GCM", iv: iv },
             key,
             ciphertext
         );

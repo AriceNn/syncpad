@@ -2,7 +2,9 @@
 
 // ---------------------------------------------------------
 // SUPABASE CONFIGURATION is loaded from config.js
+// STORAGE_VERSION tracks crypto migration state
 // ---------------------------------------------------------
+const STORAGE_VERSION = 2;
 
 // Global state
 let AES_KEY = null;
@@ -52,23 +54,106 @@ const btnCopySeed = document.getElementById('btn-copy-seed');
 const btnLogout = document.getElementById('btn-logout');
 const btnCloseSettings = document.getElementById('btn-close-settings');
 
-// Initialize
+// =========================================================
+// INITIALIZATION
+// =========================================================
 document.addEventListener('DOMContentLoaded', async () => {
     loadingOverlay.classList.remove('hidden');
-    
-    const data = await chrome.storage.local.get(['seedPhrase']);
+
+    const data = await chrome.storage.local.get(['seedPhrase', 'storageVersion']);
     if (data.seedPhrase) {
         currentPhrase = data.seedPhrase;
-        await initializeSession(currentPhrase);
+
+        // Check if migration is needed
+        if (!data.storageVersion || data.storageVersion < STORAGE_VERSION) {
+            await migrateToV2(currentPhrase);
+        } else {
+            await initializeSession(currentPhrase);
+        }
+
         showMainView();
         await fetchFromSupabase();
     } else {
         showSetupView();
     }
-    
+
     loadingOverlay.classList.add('hidden');
 });
 
+// =========================================================
+// MIGRATION: v1 (raw SHA-256) → v2 (PBKDF2 + domain sep.)
+// =========================================================
+async function migrateToV2(phrase) {
+    console.log("Starting migration to v2...");
+
+    // 1. Derive LEGACY keys to read old data
+    const legacyKeys = await deriveKeysLegacy(phrase);
+
+    // 2. Derive NEW keys
+    const newKeys = await deriveKeys(phrase);
+
+    // 3. Try to fetch existing data with LEGACY document ID
+    let legacyClipboard = [];
+    let legacyNotepad = [];
+
+    if (SUPABASE_URL && !SUPABASE_URL.includes('YOUR_SUPABASE_URL')) {
+        try {
+            const url = `${SUPABASE_URL}/rest/v1/sync_data?id=eq.${legacyKeys.documentId}&select=*`;
+            const res = await fetch(url, {
+                headers: {
+                    'apikey': SUPABASE_ANON_KEY,
+                    'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+                }
+            });
+
+            if (res.ok) {
+                const rows = await res.json();
+                if (rows && rows.length > 0) {
+                    const row = rows[0];
+
+                    // Decrypt clipboard with LEGACY key
+                    if (row.clipboard) {
+                        const dec = await decryptData(row.clipboard, legacyKeys.key);
+                        try { legacyClipboard = JSON.parse(dec); } catch (e) { /* ignore */ }
+                    }
+                    // Decrypt notepad with LEGACY key
+                    if (row.notepad) {
+                        const dec = await decryptData(row.notepad, legacyKeys.key);
+                        try {
+                            const p = JSON.parse(dec);
+                            if (Array.isArray(p)) legacyNotepad = p;
+                            else if (dec) legacyNotepad = [{ text: dec, date: new Date().toISOString() }];
+                        } catch (e) {
+                            if (dec) legacyNotepad = [{ text: dec, date: new Date().toISOString() }];
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("Migration fetch error:", e);
+        }
+    }
+
+    // 4. Set new keys as active
+    DOC_ID = newKeys.documentId;
+    AES_KEY = newKeys.key;
+
+    // 5. If legacy data exists, re-encrypt with NEW key and push
+    if (legacyClipboard.length > 0 || legacyNotepad.length > 0) {
+        clipboardData = legacyClipboard;
+        notepadData = legacyNotepad;
+        await pushToSupabase();
+        console.log("Migration: re-encrypted and pushed data to new document ID.");
+    }
+
+    // 6. Mark migration complete
+    await chrome.storage.local.set({ docId: DOC_ID, storageVersion: STORAGE_VERSION });
+    console.log("Migration to v2 complete.");
+}
+
+// =========================================================
+// SESSION
+// =========================================================
 async function initializeSession(phrase) {
     const keys = await deriveKeys(phrase);
     DOC_ID = keys.documentId;
@@ -79,7 +164,7 @@ async function initializeSession(phrase) {
 function showSetupView() {
     setupView.classList.remove('hidden');
     mainView.classList.add('hidden');
-    
+
     // Reset setup view state
     document.querySelector('.setup-buttons').classList.remove('hidden');
     slaveSetup.classList.add('hidden');
@@ -102,18 +187,18 @@ function showSyncStatus(msg = "Synced") {
     }, 2000);
 }
 
-// Setup Events
+// =========================================================
+// SETUP EVENTS
+// =========================================================
 btnMaster.addEventListener('click', async () => {
     loadingOverlay.classList.remove('hidden');
-    // Generate immediately and log in!
     const phrase = generateSeedPhrase();
     currentPhrase = phrase;
-    await chrome.storage.local.set({ seedPhrase: phrase });
+    await chrome.storage.local.set({ seedPhrase: phrase, storageVersion: STORAGE_VERSION });
     await initializeSession(phrase);
     showMainView();
-    
+
     loadingOverlay.classList.add('hidden');
-    // Auto-open settings so they see their phrase
     btnSettings.click();
 });
 
@@ -135,7 +220,7 @@ btnSlaveDone.addEventListener('click', async () => {
         slaveError.classList.remove('hidden');
         return;
     }
-    
+
     const words = phrase.split(' ');
     const invalidWord = words.find(w => !WORDLIST.includes(w));
     if (invalidWord) {
@@ -146,17 +231,23 @@ btnSlaveDone.addEventListener('click', async () => {
 
     slaveError.classList.add('hidden');
     loadingOverlay.classList.remove('hidden');
-    
+
     currentPhrase = phrase;
     await chrome.storage.local.set({ seedPhrase: phrase });
-    await initializeSession(phrase);
+
+    // Slave devices also need migration check — they might be
+    // connecting to a sync group that still has v1 data.
+    await migrateToV2(phrase);
+
     showMainView();
     await fetchFromSupabase();
-    
+
     loadingOverlay.classList.add('hidden');
 });
 
-// Settings / Logout Events
+// =========================================================
+// SETTINGS / LOGOUT
+// =========================================================
 btnSettings.addEventListener('click', () => {
     settingsSeedDisplay.textContent = currentPhrase;
     settingsOverlay.classList.remove('hidden');
@@ -178,8 +269,7 @@ btnLogout.addEventListener('click', async () => {
         await chrome.storage.local.clear();
         settingsOverlay.classList.add('hidden');
         showSetupView();
-        
-        // Clear local memory state
+
         clipboardData = [];
         notepadData = [];
         renderClipboard();
@@ -190,11 +280,13 @@ btnLogout.addEventListener('click', async () => {
     }
 });
 
-// Tab Events
+// =========================================================
+// TAB EVENTS
+// =========================================================
 tabClipboard.addEventListener('click', () => {
     tabClipboard.classList.add('active');
     tabNotepad.classList.remove('active');
-    
+
     contentClipboard.classList.add('active');
     contentClipboard.classList.remove('hidden');
     contentNotepad.classList.add('hidden');
@@ -204,24 +296,26 @@ tabClipboard.addEventListener('click', () => {
 tabNotepad.addEventListener('click', () => {
     tabNotepad.classList.add('active');
     tabClipboard.classList.remove('active');
-    
+
     contentNotepad.classList.add('active');
     contentNotepad.classList.remove('hidden');
     contentClipboard.classList.add('hidden');
     contentClipboard.classList.remove('active');
 });
 
-// Clipboard Events
+// =========================================================
+// CLIPBOARD
+// =========================================================
 btnCaptureClipboard.addEventListener('click', async () => {
     try {
         const text = await navigator.clipboard.readText();
         if (text) {
             loadingOverlay.classList.remove('hidden');
-            
-            // Fix race condition: Fetch latest from server first!
+
+            // Fetch latest from server first to prevent data loss
             await fetchFromSupabase();
-            
-            // Check if already on top to avoid duplicates
+
+            // Avoid duplicates
             if (clipboardData.length === 0 || clipboardData[0].text !== text) {
                 clipboardData.unshift({
                     text: text,
@@ -229,10 +323,10 @@ btnCaptureClipboard.addEventListener('click', async () => {
                 });
                 if (clipboardData.length > 50) clipboardData.length = 50;
             }
-            
+
             renderClipboard();
             await pushToSupabase();
-            
+
             loadingOverlay.classList.add('hidden');
             showSyncStatus("Clipboard Pushed");
         }
@@ -243,36 +337,40 @@ btnCaptureClipboard.addEventListener('click', async () => {
 });
 
 function renderClipboard() {
-    clipboardList.innerHTML = '';
+    const fragment = document.createDocumentFragment();
     clipboardData.forEach(item => {
         const div = document.createElement('div');
         div.className = 'list-item';
         div.title = "Click to copy";
-        
+
         const textDiv = document.createElement('div');
         textDiv.className = 'item-text';
         textDiv.textContent = item.text;
-        
+
         const dateDiv = document.createElement('div');
         dateDiv.className = 'item-date';
         dateDiv.textContent = new Date(item.date).toLocaleString([], {
-            month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
         });
-        
+
         div.appendChild(textDiv);
         div.appendChild(dateDiv);
-        
+
         div.addEventListener('click', async () => {
             await navigator.clipboard.writeText(item.text);
             div.style.backgroundColor = 'var(--accent)';
             setTimeout(() => { div.style.backgroundColor = ''; }, 300);
         });
-        
-        clipboardList.appendChild(div);
+
+        fragment.appendChild(div);
     });
+    clipboardList.innerHTML = '';
+    clipboardList.appendChild(fragment);
 }
 
-// Notepad Events
+// =========================================================
+// NOTEPAD
+// =========================================================
 btnNewNote.addEventListener('click', () => {
     noteEditor.classList.remove('hidden');
     notepadTextarea.value = '';
@@ -295,63 +393,65 @@ btnSaveNote.addEventListener('click', async () => {
     const text = notepadTextarea.value.trim();
     if (text) {
         loadingOverlay.classList.remove('hidden');
-        
-        // Fix race condition: Fetch latest from server first!
+
+        // Fetch latest from server first to prevent data loss
         await fetchFromSupabase();
-        
+
         notepadData.unshift({
             text: text,
             date: new Date().toISOString()
         });
         if (notepadData.length > 50) notepadData.length = 50;
-        
+
         noteEditor.classList.add('hidden');
         btnNewNote.classList.remove('hidden');
         renderNotepad();
-        
+
         await pushToSupabase();
-        
+
         loadingOverlay.classList.add('hidden');
         showSyncStatus("Note Saved");
     }
 });
 
 function renderNotepad() {
-    notepadList.innerHTML = '';
+    const fragment = document.createDocumentFragment();
     notepadData.forEach(item => {
         const div = document.createElement('div');
         div.className = 'list-item';
         div.title = "Click to copy";
-        
+
         const textDiv = document.createElement('div');
         textDiv.className = 'item-text';
         textDiv.textContent = item.text;
-        
+
         const dateDiv = document.createElement('div');
         dateDiv.className = 'item-date';
         dateDiv.textContent = new Date(item.date).toLocaleString([], {
-            month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'
+            month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
         });
-        
+
         div.appendChild(textDiv);
         div.appendChild(dateDiv);
-        
+
         div.addEventListener('click', async () => {
             await navigator.clipboard.writeText(item.text);
             div.style.backgroundColor = 'var(--accent)';
             setTimeout(() => { div.style.backgroundColor = ''; }, 300);
         });
-        
-        notepadList.appendChild(div);
+
+        fragment.appendChild(div);
     });
+    notepadList.innerHTML = '';
+    notepadList.appendChild(fragment);
 }
 
-// ---------------------------------------------------------
-// SUPABASE SYNC LOGIC
-// ---------------------------------------------------------
+// =========================================================
+// SUPABASE SYNC
+// =========================================================
 async function fetchFromSupabase() {
     if (!SUPABASE_URL || SUPABASE_URL.includes('YOUR_SUPABASE_URL')) return;
-    
+
     try {
         const url = `${SUPABASE_URL}/rest/v1/sync_data?id=eq.${DOC_ID}&select=*`;
         const res = await fetch(url, {
@@ -360,26 +460,26 @@ async function fetchFromSupabase() {
                 'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
             }
         });
-        
+
         if (!res.ok) throw new Error("Supabase fetch failed");
-        
+
         const data = await res.json();
         if (data && data.length > 0) {
             const row = data[0];
-            
-            // Decrypt Notepad
+
             if (row.notepad) {
                 const decryptedNotepadStr = await decryptData(row.notepad, AES_KEY);
                 try {
                     const parsed = JSON.parse(decryptedNotepadStr);
                     if (Array.isArray(parsed)) notepadData = parsed;
                 } catch (e) {
-                    notepadData = [{ text: decryptedNotepadStr, date: new Date().toISOString() }];
+                    if (decryptedNotepadStr) {
+                        notepadData = [{ text: decryptedNotepadStr, date: new Date().toISOString() }];
+                    }
                 }
                 renderNotepad();
             }
-            
-            // Decrypt Clipboard
+
             if (row.clipboard) {
                 const decryptedClipboardStr = await decryptData(row.clipboard, AES_KEY);
                 try {
@@ -397,21 +497,21 @@ async function fetchFromSupabase() {
 
 async function pushToSupabase() {
     if (!SUPABASE_URL || SUPABASE_URL.includes('YOUR_SUPABASE_URL')) return;
-    
+
     try {
         const notepadStr = JSON.stringify(notepadData);
         const clipboardStr = JSON.stringify(clipboardData);
-        
+
         const encNotepad = await encryptData(notepadStr, AES_KEY);
         const encClipboard = await encryptData(clipboardStr, AES_KEY);
-        
+
         const payload = {
             id: DOC_ID,
             notepad: encNotepad,
             clipboard: encClipboard,
             updated_at: new Date().toISOString()
         };
-        
+
         const url = `${SUPABASE_URL}/rest/v1/sync_data`;
         const res = await fetch(url, {
             method: 'POST',
@@ -423,7 +523,7 @@ async function pushToSupabase() {
             },
             body: JSON.stringify(payload)
         });
-        
+
         if (!res.ok) {
             console.error(await res.text());
             throw new Error("Supabase push failed");
