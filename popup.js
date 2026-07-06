@@ -9,6 +9,7 @@ let AES_KEY = null;
 let DOC_ID = null;
 let clipboardData = [];
 let notepadData = [];
+let currentPhrase = "";
 
 // DOM Elements
 const setupView = document.getElementById('setup-view');
@@ -16,12 +17,10 @@ const mainView = document.getElementById('main-view');
 
 const btnMaster = document.getElementById('btn-master');
 const btnSlave = document.getElementById('btn-slave');
-const masterSetup = document.getElementById('master-setup');
 const slaveSetup = document.getElementById('slave-setup');
-const seedDisplay = document.getElementById('seed-display');
-const btnMasterDone = document.getElementById('btn-master-done');
 const seedInput = document.getElementById('seed-input');
 const btnSlaveDone = document.getElementById('btn-slave-done');
+const btnSlaveBack = document.getElementById('btn-slave-back');
 const slaveError = document.getElementById('slave-error');
 
 const tabClipboard = document.getElementById('tab-clipboard');
@@ -45,11 +44,20 @@ const notepadList = document.getElementById('notepad-list');
 
 const syncStatus = document.getElementById('sync-status');
 
+// Settings / Logout UI
+const btnSettings = document.getElementById('btn-settings');
+const settingsOverlay = document.getElementById('settings-overlay');
+const settingsSeedDisplay = document.getElementById('settings-seed-display');
+const btnCopySeed = document.getElementById('btn-copy-seed');
+const btnLogout = document.getElementById('btn-logout');
+const btnCloseSettings = document.getElementById('btn-close-settings');
+
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
     const data = await chrome.storage.local.get(['seedPhrase']);
     if (data.seedPhrase) {
-        await initializeSession(data.seedPhrase);
+        currentPhrase = data.seedPhrase;
+        await initializeSession(currentPhrase);
         showMainView();
         await fetchFromSupabase();
     } else {
@@ -67,6 +75,12 @@ async function initializeSession(phrase) {
 function showSetupView() {
     setupView.classList.remove('hidden');
     mainView.classList.add('hidden');
+    
+    // Reset setup view state
+    document.querySelector('.setup-buttons').classList.remove('hidden');
+    slaveSetup.classList.add('hidden');
+    slaveError.classList.add('hidden');
+    seedInput.value = '';
 }
 
 function showMainView() {
@@ -85,24 +99,27 @@ function showSyncStatus(msg = "Synced") {
 }
 
 // Setup Events
-btnMaster.addEventListener('click', () => {
-    masterSetup.classList.remove('hidden');
-    slaveSetup.classList.add('hidden');
+btnMaster.addEventListener('click', async () => {
+    // Generate immediately and log in!
     const phrase = generateSeedPhrase();
-    seedDisplay.textContent = phrase;
-});
-
-btnSlave.addEventListener('click', () => {
-    slaveSetup.classList.remove('hidden');
-    masterSetup.classList.add('hidden');
-});
-
-btnMasterDone.addEventListener('click', async () => {
-    const phrase = seedDisplay.textContent;
+    currentPhrase = phrase;
     await chrome.storage.local.set({ seedPhrase: phrase });
     await initializeSession(phrase);
     showMainView();
-    await fetchFromSupabase();
+    
+    // Auto-open settings so they see their phrase
+    btnSettings.click();
+});
+
+btnSlave.addEventListener('click', () => {
+    document.querySelector('.setup-buttons').classList.add('hidden');
+    slaveSetup.classList.remove('hidden');
+});
+
+btnSlaveBack.addEventListener('click', () => {
+    document.querySelector('.setup-buttons').classList.remove('hidden');
+    slaveSetup.classList.add('hidden');
+    slaveError.classList.add('hidden');
 });
 
 btnSlaveDone.addEventListener('click', async () => {
@@ -123,10 +140,45 @@ btnSlaveDone.addEventListener('click', async () => {
     }
 
     slaveError.classList.add('hidden');
+    currentPhrase = phrase;
     await chrome.storage.local.set({ seedPhrase: phrase });
     await initializeSession(phrase);
     showMainView();
     await fetchFromSupabase();
+});
+
+// Settings / Logout Events
+btnSettings.addEventListener('click', () => {
+    settingsSeedDisplay.textContent = currentPhrase;
+    settingsOverlay.classList.remove('hidden');
+});
+
+btnCloseSettings.addEventListener('click', () => {
+    settingsOverlay.classList.add('hidden');
+});
+
+btnCopySeed.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(currentPhrase);
+    const originalText = btnCopySeed.textContent;
+    btnCopySeed.textContent = "Copied!";
+    setTimeout(() => { btnCopySeed.textContent = originalText; }, 2000);
+});
+
+btnLogout.addEventListener('click', async () => {
+    if (confirm("Are you sure you want to log out? Ensure you have your phrase saved, otherwise you will lose access to this sync group!")) {
+        await chrome.storage.local.clear();
+        settingsOverlay.classList.add('hidden');
+        showSetupView();
+        
+        // Clear local memory state
+        clipboardData = [];
+        notepadData = [];
+        renderClipboard();
+        renderNotepad();
+        AES_KEY = null;
+        DOC_ID = null;
+        currentPhrase = "";
+    }
 });
 
 // Tab Events
@@ -292,7 +344,7 @@ async function fetchFromSupabase() {
                     const parsed = JSON.parse(decryptedNotepadStr);
                     if (Array.isArray(parsed)) notepadData = parsed;
                 } catch (e) {
-                    // Backwards compatibility with old single-string notes
+                    // Backwards compatibility
                     notepadData = [{ text: decryptedNotepadStr, date: new Date().toISOString() }];
                 }
                 renderNotepad();

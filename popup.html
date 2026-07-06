@@ -15,20 +15,15 @@
         </div>
         
         <div class="setup-buttons">
-            <button id="btn-master" class="btn primary">I am Master Device</button>
-            <button id="btn-slave" class="btn secondary">I am Slave Device</button>
-        </div>
-
-        <div id="master-setup" class="hidden">
-            <p class="instruction">Save these 25 words. You will need them to connect other devices.</p>
-            <div id="seed-display" class="seed-box"></div>
-            <button id="btn-master-done" class="btn primary">I saved them, Continue</button>
+            <button id="btn-master" class="btn primary">Create New Account (Master)</button>
+            <button id="btn-slave" class="btn secondary">Link Device (Slave)</button>
         </div>
 
         <div id="slave-setup" class="hidden">
             <p class="instruction">Enter the 25-word phrase from your Master device.</p>
             <textarea id="seed-input" placeholder="Enter 25 words here..."></textarea>
             <button id="btn-slave-done" class="btn primary">Connect</button>
+            <button id="btn-slave-back" class="btn secondary">Back</button>
             <p id="slave-error" class="error-text hidden">Invalid phrase length. Must be 25 words.</p>
         </div>
     </div>
@@ -41,6 +36,9 @@
                 <button id="tab-clipboard" class="tab-btn active">Clipboard</button>
                 <button id="tab-notepad" class="tab-btn">Notes</button>
             </div>
+            <button id="btn-settings" class="icon-btn" title="Settings & Backup" aria-label="Settings">
+                ⚙️
+            </button>
         </div>
         
         <div class="tab-content">
@@ -78,6 +76,19 @@
             </div>
         </div>
         <div id="sync-status" class="status-indicator hidden">Synced</div>
+    </div>
+
+    <!-- SETTINGS OVERLAY -->
+    <div id="settings-overlay" class="overlay hidden">
+        <div class="overlay-content">
+            <h3>Settings & Backup</h3>
+            <p>Your 25-word recovery phrase. Use this to link other devices.</p>
+            <div id="settings-seed-display" class="seed-box"></div>
+            <button id="btn-copy-seed" class="btn primary">Copy Phrase</button>
+            <hr class="divider">
+            <button id="btn-logout" class="btn danger">Logout / Disconnect</button>
+            <button id="btn-close-settings" class="btn secondary">Close</button>
+        </div>
     </div>
 
     <!-- Bip39 Wordlist (simplified) -->
